@@ -1,0 +1,83 @@
+---
+title: "571HW1"
+author: "Coco_Luo"
+date: "2023-01-09"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 1
+
+```{r, echo=FALSE}
+# load library MASS
+library(MASS)
+library(mvtnorm)
+```
+
+In this problem, I conduct a series of simulation experiments in which there are m individuals who each have n observations. I made the outcomes normally distributed with common correlation $\rho$ where I assumed that there is only a single independent variable. I considered n in the values from (100, 150, 200) and m in the values from (5, 10, 15), with $\rho$ in the range of (-0.5, 0, 0.5), and I used those to fit into the rmvnorm functions supported by MASS and mvtnrom library. I repeated each stimulation for 1000 times. My null hypothesis is that all the groups are independent to each other, and my alternative hypothesis is that at least one group is not independent. I got the wald p value to be approximate 0 for all the m runs suggesting that we should reject the null hypothesis and concluded that at least one group is not independent. The final results is recorded as a table below: 
+
+```{r, echo=FALSE}
+tab <- matrix(c(0.000673, 0.0003591182, 1,
+                0.000673,0.0003591182, 1, 
+                0.001336,0.003328825,1,
+                0.000937,0.00926943,1,
+                0.000937,0.00926943,1,
+                0.000631,0.007555219, 1,
+                0.000281, 0.006200638, 1,
+                0.003729, 0.004884394, 1,
+                0.000761, 0.003525521, 1,
+                0.000277,0.0005133296, 1,
+                0.000673, 0.0003591182, 1
+                ), ncol=3, byrow=TRUE)
+colnames(tab) <- c('bias','standard error','coverage')
+rownames(tab) <- c('n=200, m=5, rh0=-0.5: ',
+                   'n=150, m=5, rh0=-0.5: ','n=100, m=5, rh0=-0.5: ','n=100, m=5, rh0=0: ', 'n=100, m=5, rh0=0.5: ',
+                   'n=150, m=5, rh0=0.5: ','n=200, m=5, rh0=0.5: ', 'n=100, m=10, rh0=0.5: ',
+                   'n=100, m=15, rh0=0.5: ', 'n=100, m=100, rh0=0.5: ','n=100, m=150, rh0=0.5: ')
+tab <- as.table(tab)
+knitr::kable(tab)
+```
+
+We can see from the resulted table that, although the 95% coverages are all approximate to 1. While else is the same, as $\rho$ is negative, we gets larger bias, and smaller standard error. While else is the same, as n goes larger, we get smaller bias and smaller standard error. The size of m does not affect the results much. Aside from that, I also switched the m and n terms but it seems that this does not affect the results a lot either.
+
+## Question 2
+
+I ran the similar stimulation as I did in problem 1, but this time I created an logistic function so that I can fit a logistic regression model based on the stimulated dichotomous outcome. This time, when else are the same, as $\rho$ becomes positive, we got large bias which are negative; but when $\rho$ is negative, we have small bias which are positive, and also our standard errors are smaller. The size of n does not affect the results, so do the size of m. Switch m to be smaller than n or n to be smaller than m does not affect the results either.
+
+```{r, echo=FALSE}
+tab <- matrix(c(0.000673, 0.000359, 1,
+                0.000673,0.000359, 1, 
+                0.000673,0.000359, 1,
+                -0.943,0.00127,1,
+                -0.981,0.00139,1,
+                -0.981,0.00114,1,
+                -0.983,0.000984,1,
+                -0.982,0.000497,1,
+                -0.982,0.000336,1,
+                -0.983,0.000300,1,
+                -0.982,0.000194,1
+                ), ncol=3, byrow=TRUE)
+colnames(tab) <- c('bias','standard error','coverage')
+rownames(tab) <- c('n=200, m=5, rh0=-0.5: ',
+                   'n=150, m=5, rh0=-0.5: ',
+                   'n=100, m=5, rh0=-0.5: ',
+                   'n=100, m=5, rh0=0: ', 
+                   'n=100, m=5, rh0=0.5: ',
+                   'n=150, m=5, rh0=0.5: ',
+                   'n=200, m=5, rh0=0.5: ', 
+                   'n=200, m=10, rh0=0.5: ',
+                   'n=200, m=15, rh0=0.5: ', 
+                   'n=10, m=100, rh0=0.5: ',
+                   'n=20, m=100, rh0=0.5: ')
+tab <- as.table(tab)
+knitr::kable(tab)
+```
+
+
+## Question 3
+
+In most confitions typically encountered in practical applications, multi items scales clearly outperform univariate scales in terms of predictive validity, thus we should use this method with caution as it should be limited to special circumstances. Practically, if the object can be conceptualized as concrete and univariate, then it can be proper to use the method and transform the multivariate data into univariate. According to Bergkvist and Rossiter (2007, p.183), carefully crafted single-item measure of doubly concrete constructs are at least as valid as multiitem measures of the same constructs, and that the use of multiple items to measure them is unnecessary. In light of their statement, this method has practical advantages such as parsimony and ease of administration. But we need to be careful, for the first reason, this form of analysis cannot guarantee better performance than the multivariate data in most empirically settings. Secondly, the response pattern migh carry over to the subsequent feature meansurement due to variable correlation and dependence between groups. This effect might affect a lot on the predictive validity, but using multivariate analysis compensate this effect. With an appropriate study design, think about that we give each of several drugs to every patient, and measure each patient's health after every drug. Or if we measure the same outcome over time, as with longitudinal data: children's heights over time. Then we have multiple outcomes for each unit, we'll probably want to do at least some simple contrasts: comparing the effects of drug A vs drug B, or the average effects of drugs A and B vs placebo. For this, repeated Measures ANOVA is an appropriate multivariate statistical model/analysis. In addition, poor analyses that ignored dependence sometimes lead to terrible underestimates of risk. Lastely,  multivariate tests offered a marginally higher power than univariate tests when the assumption of variance homogeneity was met, but multivariate tests do not provide an appreciable increase in power compared to univariate techniques to detect group differences in empirical studies
+
