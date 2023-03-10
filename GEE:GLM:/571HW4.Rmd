@@ -1,0 +1,145 @@
+---
+title: "571HW4"
+author: "Coco_Luo"
+date: "2023-02-16"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, collapse = F, message = F, warning = F)
+```
+
+# Problem 1
+
+## 1.1
+
+I analyzed this data set using a random intercept logistic mixed model by assuming a normally distributed random intercept, the model is shown below.
+
+```{r, echo=F}
+library(lme4)
+library(gee)
+
+df =  read.table("~/Desktop/571/HW4/sixcity.dat", quote="\"", comment.char="")
+colnames(df) = c("wheezing", "id", "age", "maternal_smoking")
+df[,"maternal_smoking"] = factor(df[,"maternal_smoking"])
+df[,"wheezing"] = factor(df[,"wheezing"])
+
+lmm = glmer(wheezing ~ age + maternal_smoking + + age:maternal_smoking + (1 | id), 
+            data = df, family = "binomial")
+summary(lmm)
+```
+
+
+## 1.2
+
+
+In GLMMs, the $\beta$s  have child-specific interpretations. For example, Beta_age is conditional on the child-specific random effects. Beta_age models the evolution of each child separately. $\beta_{age}$ is the log of odds ratio if the same child was to change from unexposed to exposed.
+
+In GEE, the $\beta$s  are the average interpretation over all children. For example, $\beta_{age}$ is the log of odds ratio comparing the exposed children with the unexposed children.
+
+```{r, echo=F}
+### GEE
+model_gee_exch = gee(wheezing ~ age + maternal_smoking + age:maternal_smoking, 
+                     id = id, corstr = "exchangeable", family = "binomial", data = df)
+summary(model_gee_exch)
+```
+
+## 1.3
+
+Below is my own code implementing a random intercept logistic mixed model assuming a normally distributed random intercept.
+
+```{r, eval = F}
+get_density_prod = function(b, sub, beta, theta) {
+  p = 1 / (1 + exp(-1 * (beta[1] + sub["age"] * beta[2] + sub["maternal_smoking"] 
+                         * beta[3] + b)))
+  prod(p ^ sub["wheezing"] * (1 - p) ^ (1 - sub["wheezing"])) * dnorm(b, sd = theta)
+}
+
+get_neg_logL = function(params, df) {
+  beta = params[1:3]
+  theta = params[4]
+  log_prod_all = 0
+  for (m_id in unique(df$id)) {
+    sub = df[df$id == m_id,]
+    f_integral = integrate(get_density_prod, -10, 10, sub, beta, theta)$value
+    log_prod_all = log_prod_all + log(f_integral)
+  }
+  -1 * log_prod_all
+}
+
+df = read.table("./sixcity.dat")
+colnames(df) = c("wheezing", "id", "age", "maternal_smoking")
+
+
+result = optim(c(-3, 0, 0.4, 2), get_neg_logL, NULL, df)
+result$par
+```
+
+```{r, echo = F}
+result = c(-3.0911393, 0.4986091, 0.7728190, 0.9221002)
+names = c("Fix effects: beta_intercept", "Fix effects: beta_age", 
+          "Fix effects: beta_maternal_smoking", "Random effects: b_intercept(std.dev)")
+df = as.data.frame(result)
+rownames(df) = names
+knitr::kable(df)
+```
+
+# Problem 2
+
+GEE and logistic mixed models with random intercepts are both used to analyze clustered or longitudinal data but there are some differences in their assumptions. Logistic mixed models with random intercepts allowed modeling of random effects which account for the correlation between repeated measures within the same cluster or individual. It can handle unbalanced data where the number of measurements per individual may differ. If can model both continuous and categorical predictors and interactions. Can provide estimates of individual level effects which are useful for understanding within subject changes over time. And provides estimates of within and between cluster variability in the outcome.
+However, this model assumes that the random effects are normally distributed which may not be correct. It also assumes a linear relationship between the outcome and the predictors on the log odds scale which might not be suitable for every dataset. And it can be computationally intensive especially for large datasets.
+
+On the other hand, GEE model does not require specification of a complete model for the distribution of random effects, making it more robust to misspecification of the covariance structure. It can deal with unbalanced data where the number of measurements per individual might be different. It can mdoel both continuous and categorical predictors and interactions and provide population averaged estimates, which are useful to understand the overall trends in the data. However, it assumes that the correlation structure must be correctly specified, the outcome and predictors are linearlly related and it does not account for individual level effects so cannot provide estimates of within subject changes over time. It cannot provide estimates of within and between cluster variability in the outcome because it can only give us estimates of the population averaged effects.
+
+As a result, our decision on choosing the model depends on if there is a random effect within each individual. If so, the $\mu_{ij}$ in GEE is hard to characterize. In this case, I would choose logistic (generalized) mixed model. GEE has an advantage when we know the working correlation matrix or the matrix is unstructured. When the working correlation matrix is unstructured, the covariance matrices are different across individuals so the assumptions of logistic (generalized) mixed model don't hold.
+
+Finally, if I have more time, I will consider on measuring a continuous variable on each individual n times longitudinally. I would also try different sample sizes, and different number of measurement times to see if the results changed.
+
+```{r, include=F}
+library(MASS)
+
+m = 10
+n = 50
+x1 = rep(c(1, 0), rep(m * n / 2, 2))
+x2 = rnorm(m * n)
+id = factor(rep(1:m, rep(n, m)))
+rho = 0.5
+sig_err = 0.5
+sig_effect = 1
+
+# Simulation 1, GMM setup
+beta1 = 2
+beta2 = sig_effect * rep(rnorm(m), rep(n, m))
+p = 1 / (1 + exp(-1 * (1 + x1 * beta1 + x2 * beta2 + sig_err * rnorm(m * n))))
+y = rbinom(length(p), size = 1, prob = p)
+# gmm
+model_gmm = glmer(y ~ x1 + (x2 | id), family = "binomial")
+# gee
+model_gee = gee(y ~ x1 + x2, id = id, famil = "gaussian", corstr = "exchangeable")
+```
+
+```{r, echo=F}
+knitr::kable(summary(model_gmm)$coefficients,caption = "stimulation one LMM")
+
+knitr::kable(summary(model_gee)$coefficients,caption = "stimulation one GEE - exchangeable")
+```
+
+```{r, include=F}
+# Simulation 2, GEE setup
+beta2 = 1
+p = 1 / (1 + exp(-1 * (beta1 * x1 + beta2 * x2 + sig_err * rnorm(m * n))))
+y = rbinom(length(p), size = 1, prob = p)
+
+model_gmm = glmer(y ~ x1 + (x2 | id), family = "binomial")
+# gee
+model_gee = gee(y ~ x1 + x2, id = id, famil = "gaussian", corstr = "independence")
+```
+
+```{r, echo=F}
+knitr::kable(summary(model_gmm)$coefficients,
+             caption = "stimulation two LMM")
+
+
+knitr::kable(summary(model_gee)$coefficients,
+             caption = "stimulation two GEE - independence")
+```
