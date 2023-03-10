@@ -1,0 +1,605 @@
+---
+title: "571HW3"
+author: "Coco_Luo"
+date: "2023-02-08"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#  Question 1
+
+## 1.1
+
+I fit a regular logistic regression ignoring within-subject correlation and calculate the naive SEs below:
+
+```{r, echo=FALSE}
+df <- read.table("~/Desktop/571/HW3/sixcity.dat", quote="\"", comment.char="")
+colnames(df) = c("wheezing", "id", "age", "maternal_smoking")
+df[,"maternal_smoking"] = factor(df[,"maternal_smoking"])
+df[,"wheezing"] = factor(df[,"wheezing"])
+model_glm = glm(wheezing ~ age + maternal_smoking, data = df, 
+                family = "binomial")
+knitr::kable(summary(model_glm)$coefficients ,
+             caption = "logistic regression model")
+```
+
+## 1.2 
+
+Below is an analysis of the data set using GEE1 assuming working independence and exchangeable, and the results with the naive logistic regression.
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+library(gee)
+model_gee_indep = gee(wheezing ~ age + maternal_smoking, 
+                      id = id, corstr = "independence", family = "binomial", data = df)
+
+
+
+model_gee_exch = gee(wheezing ~ age + maternal_smoking, 
+                     id = id, corstr = "exchangeable", family = "binomial", data = df)
+
+```
+```{r, echo=F}
+knitr::kable(summary(model_gee_indep)$coefficients, 
+             caption = "gee independence model")
+knitr::kable(summary(model_gee_exch)$coefficients,
+             caption = "gee exchangeable model")
+```
+
+
+From the output of the three models,the results all look similar.
+
+To interpret the coefficient estimates in naive logistic regression, for each year of change in `age`, the odds ratio of presence of wheezing over absence of wheezing is expected to change by a factor of $e^{-0.1134128}$. This suggests that the older children are, the less likely they are going to be examined with the presence of wheezing.   
+
+For each unit of change in `maternal_smoking`, the odds ratio of presence of wheezing over absence of wheezing is expected to change by a factor of $e^{0.2721386}$. This suggests that if the mother smoked during pregnancy, the more likely their children are going to be examined with the presence of wheezing.   
+
+To Interpret the coefficient estimates in GEE1 assuming working independence: for each year of change in `age`, the odds ratio of presence of wheezing over absence of wheezing is expected to change by a factor of $e^{-0.1134128}$. This suggests that the older children are, the less likely they are going to be examined with the presence of wheezing.   
+
+For each unit of change in `maternal_smoking`, the odds ratio of presence of wheezing over absence of wheezing is expected to change by a factor of $e^{0.2721386}$. This suggests that if the mother smoked during pregnancy, the more likely their children are going to be examined with the presence of wheezing. 
+
+To interpret the coefficient estimates in GEE1 assuming working exchangeable: for each year of change in `age`, the odds ratio of presence of wheezing over absence of wheezing is expected to change by a factor of $e^{-0.1133850}$. This suggests that the older children are, the less likely they are going to be examined with the presence of wheezing.   
+
+For one unit change in `maternal_smoking`, the odds ratio of presence of wheezing over absence of wheezing is expected to change by a factor of $e^{0.2650809}$. This suggests that if the mother smoked during pregnancy, the more likely their children are going to be examined with the presence of wheezing.  
+
+## 1.3
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+library(alr)
+data(alrset)
+df2 =  read.table("~/Desktop/571/HW3/sixcity.dat", quote="\"", comment.char="")
+colnames(df2) = c("wheezing", "id", "age", "maternal_smoking")
+y = as.matrix(df2[,1])
+x = cbind(1, as.matrix(df2[,3:4]))
+id = as.matrix(df2[,2])
+model_alr = alr(y ~ x - 1, id = id, depm = "exchangeable", ainit = 0.01)
+print(model_alr$alpha)
+```
+
+There is a strong within-subject correlation because we have a large alpha (2.038). The code details are in Appendix. 
+
+## 1.4
+
+We can let the actual "id" be the combination of "children id" + "age". And our model would be like: `wheezing ~ age + maternal_smoking, id = id + age`.
+
+#  Question 2
+
+## 2.1
+
+I stimulate 200 data sets and run GEE1 with exchangeable correlation to estimate the regression coefficients and their sandwich SEs, and the correlation parameter $\rho$. The stimulated data table gives me 200 rows, here I only included 15 rows from the stimulated results.
+
+```{r, echo=F, message=F}
+library(SimCorMultRes)
+quiet <- function(x) { 
+  sink(tempfile()) 
+  on.exit(sink()) 
+  invisible(force(x)) 
+} 
+
+beta_coefficients = c(0.5, 0.5)
+beta_intercept = -1.5
+sample_size = 300
+cluster_size = 3
+rho = 0.25
+latent_correlation_matrix = toeplitz(c(1, rep(rho, cluster_size - 1)))
+N = 200
+
+coef_mat = matrix(0, nrow = N, ncol = 3)
+se_mat = matrix(0, nrow = N, ncol = 3)
+rho_mat = matrix(0, nrow = N, ncol = 1)
+
+for (i in 1:200) {
+  x1 = rep(c(1, 0), rep(sample_size * cluster_size / 2, 2))
+  x2 = rep(0:(cluster_size-1), sample_size)
+  simulated_binary_dataset = rbin(clsize = cluster_size, intercepts = beta_intercept,
+                                  betas = beta_coefficients, xformula = ~x1 + x2, 
+                                  cor.matrix = latent_correlation_matrix, link = "logit")
+  binary_gee_model = quiet(gee(y ~ x1 + x2, family = "binomial", id = id, corstr = "exchangeable",
+                         data = simulated_binary_dataset$simdata))
+  summary_gee = summary(binary_gee_model)
+  coef_mat[i,] = summary_gee$coefficients[,1]
+  se_mat[i,] = summary_gee$coefficients[,2]
+  rho_mat[i,] = summary_gee$working.correlation[2,1]
+}
+```
+
+```{r, echo = F, warning=FALSE, message=FALSE}
+tbl_sim = cbind(coef_mat, se_mat, rho_mat)
+colnames(tbl_sim) = c("est.coef.beta0", "est.coef.beta1", "est.coef.beta2",
+                      "SE.beta0", "SE.beta1", "SE.beta2", "correlation.rho")
+knitr::kable(round(head(tbl_sim, 15), 3))
+```
+
+
+## 2.2
+
+I calculate the average regression coefficient estimates and the average correlation parameters across the 200 runs, and compare them with the true values:
+
+Average regression coefficient estimates: -1.507872 0.498703 0.5067413 
+
+Empirical bias of coefficient estimates: -0.007872412 -0.001296956 0.006741309 
+
+Average correlation parameters: 0.1468436 
+
+Eempirical bias of correlation parameters: -0.1031564 
+
+```{r, include =F, warning=FALSE, message=FALSE}
+coef_avg = colMeans(coef_mat)
+coef_bias = coef_avg - c(beta_intercept, beta_coefficients)
+cat("Average regression coefficient estimates:", coef_avg, "\n")
+cat("Empirical bias of coefficient estimates:", coef_bias, "\n")
+
+rho_avg = mean(rho_mat)
+rho_bias = rho_avg - rho
+cat("Average correlation parameters:", rho_avg, "\n")
+cat("Eempirical bias of correlation parameters:", rho_bias, "\n")
+```
+
+## 2.3
+
+I calculate the average sandwich SEs and compare them with the “empirical SEs”. We get small biases, which shows that the sandwich estimators work well in estimating the true variation of the GEE estimates $\hat\beta$'s.
+
+Average estimated SEs: 0.1577237 0.1663868 0.08411087 
+
+Empirical SEs: 0.1648745 0.1696177 0.08679951 
+
+Empirical bias: -0.007150816 -0.003230895 -0.002688635 
+
+```{r, include = F, warning=FALSE, message=FALSE}
+se_avg = colMeans(se_mat)
+se_emp = apply(coef_mat, 2, sd)
+cat("Average estimated SEs:", se_avg, "\n")
+cat("Empirical SEs:", se_emp, "\n")
+cat("Empirical bias:", se_avg - se_emp, "\n")
+```
+
+## 2.4
+
+My program allow you to simulate correlated binary data with correlation 0.75. I set rho = 0.75 and run the previous code. I get the metrics again (still keep only the first 15 rows of the stimulated data).
+
+```{r, echo = F, warning=FALSE, message=FALSE}
+beta_coefficients = c(0.5, 0.5)
+beta_intercept = -1.5
+sample_size = 300
+cluster_size = 3
+rho = 0.75
+latent_correlation_matrix = toeplitz(c(1, rep(rho, cluster_size - 1)))
+N = 200
+
+coef_mat = matrix(0, nrow = N, ncol = 3)
+se_mat = matrix(0, nrow = N, ncol = 3)
+rho_mat = matrix(0, nrow = N, ncol = 1)
+
+for (i in 1:200) {
+  x1 = rep(c(1, 0), rep(sample_size * cluster_size / 2, 2))
+  x2 = rep(0:(cluster_size-1), sample_size)
+  simulated_binary_dataset = rbin(clsize = cluster_size, intercepts = beta_intercept,
+                                  betas = beta_coefficients, xformula = ~x1 + x2, 
+                                  cor.matrix = latent_correlation_matrix, link = "logit")
+  binary_gee_model = quiet(gee(y ~ x1 + x2, family = "binomial", id = id, corstr = "exchangeable",
+                         data = simulated_binary_dataset$simdata))
+  summary_gee = summary(binary_gee_model)
+  coef_mat[i,] = summary_gee$coefficients[,1]
+  se_mat[i,] = summary_gee$coefficients[,2]
+  rho_mat[i,] = summary_gee$working.correlation[2,1]
+}
+
+tbl_sim = cbind(coef_mat, se_mat, rho_mat)
+colnames(tbl_sim) = c("est.coef.beta0", "est.coef.beta1", "est.coef.beta2",
+                      "SE.beta0", "SE.beta1", "SE.beta2", "correlation.rho")
+knitr::kable(round(head(tbl_sim, 15), 3))
+
+coef_avg = colMeans(coef_mat)
+coef_bias = coef_avg - c(beta_intercept, beta_coefficients)
+
+rho_avg = mean(rho_mat)
+rho_bias = rho_avg - rho
+
+se_avg = colMeans(se_mat)
+se_emp = apply(coef_mat, 2, sd)
+```
+
+The average regression coefficient estimates: -1.51857 0.5119064 0.5017869 
+
+The empirical bias of coefficient estimates: -0.01857031 0.01190643 0.001786916 
+
+The average correlation parameters: 0.4924067 
+
+The empirical bias of correlation parameters: -0.2575933 
+
+The average estimated SEs: 0.1745627 0.2053201 0.0653917 
+
+The empirical SEs: 0.180106 0.2124638 0.0643719 
+
+The empirical bias: -0.005543229 -0.007143784 0.001019797 
+
+#  Question 3
+
+## 3.1
+
+Linear mixed model:
+
+```{r, echo=F, warning=FALSE, message=FALSE}
+library(reshape2)
+library(dplyr)
+library(lme4)
+
+
+data =  read.table("~/Desktop/571/HW3/framingham.dat", quote="\"", comment.char="")
+colnames(data) = c("age", "gender", "bmi_baseline","bmi_year10", "cigarattes",
+                   "cholesterol_year0",  "cholesterol_year2",  "cholesterol_year4",
+                   "cholesterol_year6",  "cholesterol_year8", "cholesterol_year10",
+                   "dead")
+data["individuals"] = 1:nrow(data)
+data[6:11][data[,6:11] == -9] = NA
+data2 = melt(data, id=c("age", "gender", "bmi_baseline","bmi_year10", 
+                        "cigarattes", "dead", "individuals"))
+data2 = data2[complete.cases(data2),]
+
+data2["year"] = recode(data2$variable, cholesterol_year0=0, cholesterol_year2=2, 
+       cholesterol_year4=4, cholesterol_year6=6, cholesterol_year8=8,
+       cholesterol_year10=10)
+
+# LMM
+model_lmm = lmer(value ~ age + gender + bmi_baseline + (year | individuals), 
+              data = data2)
+summary(model_lmm)
+```
+
+GEE:
+
+```{r, echo = F, warning=FALSE, message=FALSE}
+# GEE
+model_gee = gee(value ~ age + gender + bmi_baseline + year, id = individuals, 
+                famil = "gaussian",
+                corstr = "exchangeable", data = data2)
+summary(model_gee)  # working correlation is a bit weird
+```
+
+I use the Framingham data again to conduct our analysis. We can see from the result that LMM allows both fixed and random effects, but GEE only allows fixed effects
+
+A LMM allows the researchers to explain the variable level variance by the predictors in the model as it partitions the variance within and between variables. However, researcher cannot describe changes in variability in GEE model because the variability is in effect treated as a nuisance factor that is adjusted for as a covariate.
+
+## 3.2
+
+It depends on the research question, the nature of the outcome variable, the availability of missing data, and the type of correlation structure in the data. An LMM might be more appropriate if the primary interest is in estimating subject-specific effects and patterns of change over time. A GEE might be more appropriate if the focus is mainly on population-level parameters. If there is a random effect within each individual, the $\mu_{ij}$ in GEE is hard to characterize. In this case, we can choose LMM. 
+
+In LMM, the outcome variable is modeled as a function of both fixed and random effects. The fixed effects are the population-level parameters, while the random effects account for the individual-level variation and dependence within each subject. LMMs are typically used when the researcher is interested in both the population-level effects and the individual-level patterns of change over time. They allow for the estimation of random subject-specific intercepts and slopes, and they also accommodate missing data and unbalanced repeated measures designs.
+
+On the other hand, GEE focuses on the population-level parameters and accounts for the within-subject dependence using a working correlation structure. It can handle non-normal outcomes, whereas LMMs typically assume a normal distribution. GEE is useful when the researcher is mainly interested in the population-level parameters, and the within-subject dependence structure is of secondary importance. In addition, it has advantage if we know the working correlation matrix or the matrix is unstructured. When the working correlation matrix is unstructured, the covariance matrices are different across individuals so the assumptions of LMM don't hold.
+
+```{r, include = F,warning=FALSE, message=FALSE}
+library(MASS)
+
+m = 200
+n = 6
+x1 = rep(c(1, 0), rep(m * n / 2, 2))
+x2 = rnorm(m * n)
+id = factor(rep(1:200, rep(6, 200)))
+rho = 0.5
+sig_err = 0.5
+sig_effect = 1
+
+# Simulation 1, LMM setup
+beta1 = 2
+beta2 = sig_effect * rep(rnorm(200), rep(6, 200))
+y = 1 + x1 * beta1 + x2 * beta2 + sig_err * rnorm(m * n)
+
+# lmm
+model_lmm = lmer(y ~ x1 + (x2 | id))
+# gee
+model_gee = gee(y ~ x1 + x2, id = id, famil = "gaussian", corstr = "exchangeable")
+
+```
+
+```{r, echo=FALSE}
+knitr::kable(summary(model_lmm)$coefficients,
+             caption = "stimulation one LMM")
+knitr::kable(summary(model_gee)$coefficients,
+             caption = "stimulation one GEE")
+```
+
+
+```{r, include = F,warning=FALSE, message=FALSE}
+# Simulation 2, GEE setup
+beta2 = 1
+y = beta1 * x1 + beta2 * x2 + sig_err * rnorm(m * n)
+model_lmm = lmer(y ~ x1 + (x2 | id))
+
+# gee
+model_gee = gee(y ~ x1 + x2, id = id, famil = "gaussian", corstr = "independence")
+```
+
+```{r, echo=FALSE}
+knitr::kable(summary(model_lmm)$coefficients,
+             caption = "stimulation two LMM")
+knitr::kable(summary(model_gee)$coefficients,
+             caption = "stimulation two GEE")
+```
+
+
+If I have more time, I will consider on measuring a dichotomous characteristics on each individual n times longitudinally. I would also try different sample sizes, and different number of measurement times to see if the results changed.
+
+# Problem 4 
+
+Let $Y_{1ij}$ be the fetal weight (continuous) of ith group, jth individual, and $Y_{2ij}$ be the fetal death (binary) of ith group, jth individual. Let $Y_{2ij}^{*}$ be the underlying variable of $Y_{2ij}$, such that $P(Y_{2ij} = 1) = P(Y_{2ij}^{*} > 0)$.
+
+Assume that $(Y_{1ij}, Y_{2ij}^{*})$ follows bivariate normal: $N(y_{1ij}, y_{2ij}, \mu, \gamma, \sigma^2, 1, \rho)$, where $\mu$ and $\gamma$ are population means of $Y_{1ij}$ and $Y_{2ij}^{*}$, $\sigma^2$ and $1$ are the their variances, respectively. Note that we have normalized var($Y_{2ij}^{*}$) to $1$. $\rho$ is the correlation coefficient. Let $X_{ij}$ be the covariate of ith group, jth individual. $X_{ij}$ is a $p \times 1$ vector consisting of {$X_{bij}, X_{tij}, X_{aij}, X_{sij}$} with dimension of $b \times 1$, $t \times 1$, $a \times 1$, and $s \times 1$.
+
+Then we have the link functions:
+$$
+\begin{aligned}
+\mu_{ij} &= X_{aij}^t \alpha \\
+\gamma_{ij} &= X_{bij}^t \beta \\
+\sigma^2_{ij} &= exp(X_{sij}^t\xi) \\
+\rho_{ij} &= \frac{exp(X_{tij}^t \tau) - 1}{exp(X_{tij}^t \tau) + 1}
+\end{aligned}
+$$
+
+Let $l_{ij}$ be the log-likelihood function. Then we can get independent score functions:
+$$
+\begin{aligned}
+&\sum_{i,j}
+\begin{bmatrix}
+\frac{\partial l_{ij}}{\partial \alpha} \\ 
+\frac{\partial l_{ij}}{\partial \beta} \\
+\frac{\partial l_{ij}}{\partial \xi} \\
+\frac{\partial l_{ij}}{\partial \tau} \\
+\end{bmatrix} = 0 \\
+\Rightarrow &\sum^{N}_{i=1} D_i^T V_i^{-1} (Y_i - \mu_i(\theta)) = 0 
+\end{aligned}
+$$
+where $Y_i$ is some function of $Y_{1i}$ and $Y_{2i}$.
+
+$\mu_i(\theta)$ is a function of $\alpha, \beta, \xi, \tau$.
+
+$$
+\begin{aligned}
+Var(\hat\theta) &= A^{-1}BA^{-1} \\
+A &= D_i^T V_i^{-1} D_i \\
+B &= D_i^T V_i^{-1} Var(Y_i) V_i^{-1} D_i
+\end{aligned}
+$$
+
+
+\newpage
+
+#Appendix
+
+```{r, eval=FALSE}
+## 1.1
+df <- read.table("~/Desktop/571/HW3/sixcity.dat", quote="\"", comment.char="")
+colnames(df) = c("wheezing", "id", "age", "maternal_smoking")
+df[,"maternal_smoking"] = factor(df[,"maternal_smoking"])
+df[,"wheezing"] = factor(df[,"wheezing"])
+model_glm = glm(wheezing ~ age + maternal_smoking, data = df, 
+                family = "binomial")
+knitr::kable(summary(model_glm)$coefficients ,
+             caption = "logistic regression model")
+```
+
+
+```{r, eval=FALSE}
+## 1.2
+library(gee)
+model_gee_indep = gee(wheezing ~ age + maternal_smoking, 
+                      id = id, corstr = "independence", family = "binomial", data = df)
+
+
+
+model_gee_exch = gee(wheezing ~ age + maternal_smoking, 
+                     id = id, corstr = "exchangeable", family = "binomial", data = df)
+
+```
+
+
+```{r, eval=FALSE }
+## 1.3
+library(alr)
+data(alrset)
+df2 =  read.table("~/Desktop/571/HW3/sixcity.dat", quote="\"", comment.char="")
+colnames(df2) = c("wheezing", "id", "age", "maternal_smoking")
+y = as.matrix(df2[,1])
+x = cbind(1, as.matrix(df2[,3:4]))
+id = as.matrix(df2[,2])
+model_alr = alr(y ~ x - 1, id = id, depm = "exchangeable", ainit = 0.01)
+print(model_alr$alpha)
+```
+
+```{r, echo=F, message=F}
+## 2.1
+library(SimCorMultRes)
+quiet <- function(x) { 
+  sink(tempfile()) 
+  on.exit(sink()) 
+  invisible(force(x)) 
+} 
+
+beta_coefficients = c(0.5, 0.5)
+beta_intercept = -1.5
+sample_size = 300
+cluster_size = 3
+rho = 0.25
+latent_correlation_matrix = toeplitz(c(1, rep(rho, cluster_size - 1)))
+N = 200
+
+coef_mat = matrix(0, nrow = N, ncol = 3)
+se_mat = matrix(0, nrow = N, ncol = 3)
+rho_mat = matrix(0, nrow = N, ncol = 1)
+
+for (i in 1:200) {
+  x1 = rep(c(1, 0), rep(sample_size * cluster_size / 2, 2))
+  x2 = rep(0:(cluster_size-1), sample_size)
+  simulated_binary_dataset = rbin(clsize = cluster_size, intercepts = beta_intercept,
+                                  betas = beta_coefficients, xformula = ~x1 + x2, 
+                                  cor.matrix = latent_correlation_matrix, link = "logit")
+  binary_gee_model = quiet(gee(y ~ x1 + x2, family = "binomial", id = id, corstr = "exchangeable",
+                         data = simulated_binary_dataset$simdata))
+  summary_gee = summary(binary_gee_model)
+  coef_mat[i,] = summary_gee$coefficients[,1]
+  se_mat[i,] = summary_gee$coefficients[,2]
+  rho_mat[i,] = summary_gee$working.correlation[2,1]
+}
+```
+
+```{r, eval = F, warning=FALSE, message=FALSE}
+tbl_sim = cbind(coef_mat, se_mat, rho_mat)
+colnames(tbl_sim) = c("est.coef.beta0", "est.coef.beta1", "est.coef.beta2",
+                      "SE.beta0", "SE.beta1", "SE.beta2", "correlation.rho")
+ 
+```
+
+```{r, eval =F, warning=FALSE, message=FALSE}
+## 2.2
+coef_avg = colMeans(coef_mat)
+coef_bias = coef_avg - c(beta_intercept, beta_coefficients)
+
+rho_avg = mean(rho_mat)
+rho_bias = rho_avg - rho
+```
+
+
+```{r, eval = F, warning=FALSE, message=FALSE}
+## 2.3
+se_avg = colMeans(se_mat)
+se_emp = apply(coef_mat, 2, sd)
+```
+
+
+```{r, eval = F}
+## 2.4
+beta_coefficients = c(0.5, 0.5)
+beta_intercept = -1.5
+sample_size = 300
+cluster_size = 3
+rho = 0.75
+latent_correlation_matrix = toeplitz(c(1, rep(rho, cluster_size - 1)))
+N = 200
+
+coef_mat = matrix(0, nrow = N, ncol = 3)
+se_mat = matrix(0, nrow = N, ncol = 3)
+rho_mat = matrix(0, nrow = N, ncol = 1)
+
+for (i in 1:200) {
+  x1 = rep(c(1, 0), rep(sample_size * cluster_size / 2, 2))
+  x2 = rep(0:(cluster_size-1), sample_size)
+  simulated_binary_dataset = rbin(clsize = cluster_size, intercepts = beta_intercept,
+                                  betas = beta_coefficients, xformula = ~x1 + x2, 
+                                  cor.matrix = latent_correlation_matrix, link = "logit")
+  binary_gee_model = quiet(gee(y ~ x1 + x2, family = "binomial", id = id, corstr = "exchangeable",
+                         data = simulated_binary_dataset$simdata))
+  summary_gee = summary(binary_gee_model)
+  coef_mat[i,] = summary_gee$coefficients[,1]
+  se_mat[i,] = summary_gee$coefficients[,2]
+  rho_mat[i,] = summary_gee$working.correlation[2,1]
+}
+
+tbl_sim = cbind(coef_mat, se_mat, rho_mat)
+colnames(tbl_sim) = c("est.coef.beta0", "est.coef.beta1", "est.coef.beta2",
+                      "SE.beta0", "SE.beta1", "SE.beta2", "correlation.rho")
+ 
+
+coef_avg = colMeans(coef_mat)
+coef_bias = coef_avg - c(beta_intercept, beta_coefficients)
+
+rho_avg = mean(rho_mat)
+rho_bias = rho_avg - rho
+
+se_avg = colMeans(se_mat)
+se_emp = apply(coef_mat, 2, sd)
+```
+
+```{r, eval=F, warning=FALSE, message=FALSE}
+## 3.1
+library(reshape2)
+library(dplyr)
+library(lme4)
+
+
+data =  read.table("~/Desktop/571/HW3/framingham.dat", quote="\"", comment.char="")
+colnames(data) = c("age", "gender", "bmi_baseline","bmi_year10", "cigarattes",
+                   "cholesterol_year0",  "cholesterol_year2",  "cholesterol_year4",
+                   "cholesterol_year6",  "cholesterol_year8", "cholesterol_year10",
+                   "dead")
+data["individuals"] = 1:nrow(data)
+data[6:11][data[,6:11] == -9] = NA
+data2 = melt(data, id=c("age", "gender", "bmi_baseline","bmi_year10", 
+                        "cigarattes", "dead", "individuals"))
+data2 = data2[complete.cases(data2),]
+
+data2["year"] = recode(data2$variable, cholesterol_year0=0, cholesterol_year2=2, 
+       cholesterol_year4=4, cholesterol_year6=6, cholesterol_year8=8,
+       cholesterol_year10=10)
+
+# LMM
+model_lmm = lmer(value ~ age + gender + bmi_baseline + (year | individuals), 
+              data = data2)
+```
+
+
+```{r, eval = F, warning=FALSE, message=FALSE}
+# GEE
+model_gee = gee(value ~ age + gender + bmi_baseline + year, id = individuals, 
+                famil = "gaussian",
+                corstr = "exchangeable", data = data2)
+
+```
+
+```{r, eval = F,warning=FALSE, message=FALSE}
+## 3.2
+library(MASS)
+
+m = 200
+n = 6
+x1 = rep(c(1, 0), rep(m * n / 2, 2))
+x2 = rnorm(m * n)
+id = factor(rep(1:200, rep(6, 200)))
+rho = 0.5
+sig_err = 0.5
+sig_effect = 1
+
+# Simulation 1, LMM setup
+beta1 = 2
+beta2 = sig_effect * rep(rnorm(200), rep(6, 200))
+y = 1 + x1 * beta1 + x2 * beta2 + sig_err * rnorm(m * n)
+
+# lmm
+model_lmm = lmer(y ~ x1 + (x2 | id))
+# gee
+model_gee = gee(y ~ x1 + x2, id = id, famil = "gaussian", corstr = "exchangeable")
+
+```
+
+```{r, eval = F,warning=FALSE, message=FALSE}
+# Simulation 2, GEE setup
+beta2 = 1
+y = beta1 * x1 + beta2 * x2 + sig_err * rnorm(m * n)
+model_lmm = lmer(y ~ x1 + (x2 | id))
+
+# gee
+model_gee = gee(y ~ x1 + x2, id = id, famil = "gaussian", corstr = "independence")
+```
+
+
+
